@@ -1,23 +1,26 @@
 #!/bin/bash -eu
 
-log "Moving clips to rclone archive..."
 
 source /root/.teslaCamRcloneConfig
 
-NUM_FILES_MOVED=0
+log "Checking saved folder count..."
 
-for file_name in "$CAM_MOUNT"/TeslaCam/saved* "$CAM_MOUNT"/TeslaCam/SavedClips/*; do
-  [ -e "$file_name" ] || continue
-  log "Moving $file_name ..."
-  rclone --config /root/.config/rclone/rclone.conf move "$file_name" "$drive:$path" >> "$LOG_FILE" 2>&1 || echo ""
-  log "Moved $file_name."
-  NUM_FILES_MOVED=$((NUM_FILES_MOVED + 1))
-done
-log "Moved $NUM_FILES_MOVED file(s)."
+DIRCOUNT=$(find "$CAM_MOUNT"/TeslaCam/SavedClips/* -maxdepth 0 -type d | wc -l)
 
-if [ $NUM_FILES_MOVED -gt 0 ]
+log "There are $DIRCOUNT folders to move."
+
+if [ $DIRCOUNT -gt 0 ]
 then
-  /root/bin/send-push-message "TeslaUSB:" "Moved $NUM_FILES_MOVED dashcam file(s)."
-fi
+  log "Moving clips to rclone archive..."
+  /root/bin/send-push-message "TeslaUSB:" "Beginning to move $DIRCOUNT folder(s) at $(date)."
 
+  rclone --config /root/.config/rclone/rclone.conf move "$CAM_MOUNT"/TeslaCam/SavedClips "$drive:$path" --create-empty-src-dirs --delete-empty-src-dirs >> "$LOG_FILE" 2>&1 || echo ""
+  REMAINING=$(find "$CAM_MOUNT"/TeslaCam/SavedClips/* -maxdepth 0 -type d | wc -l)
+  MOVED=$((DIRCOUNT-REMAINING))
+
+  log "Moved $MOVED folder(s)."
+
+  /root/bin/send-push-message "TeslaUSB:" "Moved $MOVED dashcam folder(s)."
+
+fi
 log "Finished moving clips to rclone archive"
