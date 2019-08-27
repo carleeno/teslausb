@@ -1,6 +1,7 @@
 #!/bin/bash -eu
 
 log "Moving clips to archive..."
+/root/bin/send-push-message "TeslaUSB:" "Archiving started at $(date)"
 
 NUM_FILES_MOVED=0
 NUM_FILES_FAILED=0
