@@ -1,6 +1,7 @@
 #!/bin/bash -eu
 
 log "Archiving through rsync..."
+/root/bin/send-push-message "TeslaUSB:" "Archiving started at $(date)"
 
 source /root/.teslaCamRsyncConfig
 
