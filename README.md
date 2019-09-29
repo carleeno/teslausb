@@ -1,8 +1,15 @@
 # teslausb
 
-## Changes
+## Intro
 
-This fork contains the following changes compared to the upstream [cimryan/teslausb](https://github.com/cimryan/teslausb):
+You can configure a Raspberry Pi Zero W so that your Tesla thinks it's a USB drive and will write dashcam footage to it. Since it's a computer:
+* Scripts running on the Pi can automatically copy the clips to an archive server when you get home.
+* The Pi can hold both dashcam clips and music files.
+* The Pi can automatically repair filesystem corruption produced by the Tesla's current failure to properly dismount the USB drives before cutting power to the USB ports.
+
+## Improvements
+
+This fork contains the following improvements compared to the upstream [cimryan/teslausb](https://github.com/cimryan/teslausb):
 1. Supports Tesla firmware 2019.x
 1. Supports saving more than one hour of recordings
 1. Supports exporting the recordings as a CIFS share
@@ -13,22 +20,22 @@ This fork contains the following changes compared to the upstream [cimryan/tesla
 1. Easier and more flexible way to specify sizes of camera and music disks
 1. Support for Gotify, IFTTT and AWS SNS in addition to Pushover for notifications
 
+
+## Installing
+
 It is recommended to use the [prebuilt image](https://github.com/marcone/teslausb/releases) and [one step setup instructions](https://github.com/marcone/teslausb/blob/main-dev/doc/OneStepSetup.md) to get started, as the instructions below may be outdated.
 
+If you've never worked with Raspberry Pi before, don't know what a Windows share is, or just want to see what this is all about, check out this YouTube video:
 
-## Intro
+[![teslausb intro and installation](http://img.youtube.com/vi/ETs6r1vKTO8/0.jpg)](http://www.youtube.com/watch?v=ETs6r1vKTO8 "teslausb intro and installation")
 
-You can configure a Raspberry Pi Zero W so that your Tesla thinks it's a USB drive and will write dashcam footage to it. Since it's a computer:
-* Scripts running on the Pi can automatically copy the clips to an archive server when you get home.
-* The Pi can hold both dashcam clips and music files.
-* The Pi can automatically repair filesystem corruption produced by the Tesla's current failure to properly dismount the USB drives before cutting power to the USB ports.
-
-Archiving the clips can take from seconds to hours depending on how many clips you've saved and how strong the WiFi signal is in your Tesla. If you find that the clips aren't getting completely transferred before the car powers down after you park or before you leave you can use the Tesla app to turn on the Climate control. This will send power to the Raspberry Pi, allowing it to complete the archival operation.
+Note that archiving the clips can take from seconds to hours depending on how many clips you've saved and how strong the WiFi signal is in your Tesla. If you find that the clips aren't getting completely transferred before the car powers down after you park or before you leave you can use the Tesla app to turn on the Climate control. This will send power to the Raspberry Pi, allowing it to complete the archival operation.
 
 Alternatively, you can provide your Tesla account credentials and VIN in TeslaUSB's settings, which will allow it to use the [Tesla API](https://tesla-api.timdorr.com) to keep the car awake while the files transfer. Instructions are available in the [one step setup instructions](https://github.com/marcone/teslausb/blob/main-dev/doc/OneStepSetup.md)
 
 ## Contributing
 You're welcome to contribute to this repo by submitting pull requests and creating issues.
+For pull requests, please split complex changes into multiple pull requests when feasible, use one commit per pull request, and try to follow the existing code style.
 
 ## Prerequisites
 
@@ -178,6 +185,40 @@ sudo -i
 /root/bin/remountfs_rw
 ```
 Then make whatever changes you need to. The next time the system boots the partitions will once again be read-only.
+
+## Optional: Using The Pi As A WiFi Access Point
+
+To enable teslausb to act as a wifi access point with the given SSID and password, find this section in your teslausb_setup_variables.conf file and uncomment the exports. Remember to change the password to something that protects your Pi.  You will not get access to the Internet but you will be able to ssh into your Pi, or access the recordings via Samba. Be careful when using this option: your AP_PASS setting is all that protects your Pi from someone remotely accessing it. To further add to the security, you may want to follow the items in the Security section that follows.
+   ```
+   # SSID, so you can access it while on the road.
+   #export AP_SSID='TESLAUSB WIFI'
+   # Change this! The setup script will not accept the default 'password'
+   # Also note that the wifi password must be at least 8 characters.
+   #export AP_PASS='password'
+   # IP address is optional. The AP will give its clients IP addresses in the
+   # x.x.x.100-150 range so make sure you don't put the AP's IP address in
+   # that range.
+   #export AP_IP='192.168.66.1'
+   ```
+
+## Security
+
+As a little discussion of security for your Pi, please keep in mind the following items.
+
+1. If WiFi Access Point is configured, the AP password needs to be worth while. Make it something better than Passw0rd, more than 8 characters. The longer the password the better. See [here](https://en.wikipedia.org/wiki/Password_strength) or [here](https://xkcd.com/936/) for password strength.
+
+2. Change the password for the pi account. To do that, make the system RW and use the passwd command to change the password. To do that, follow the instructions below. The last command will reboot your Pi: (Starting at the pi sign-on)
+
+```
+   ssh pi@teslausb.local
+   sudo -i
+   cd bin
+   ./remountfs_rw
+   passwd pi
+   reboot
+```
+
+3. Remember that the root user has a copy of your configuration file. Try the best you can to protect it.  If your Pi is taken or car is stolen, change your Tesla account password QUICKLY! Remember that if they don't have a "key" or your Tesla Account and Password, the car will not drive for them.  Also consider activating a Drive Password on your Tesla. Its only 4 digits, but that's a lot of combinations to guess. 
 
 ## Meta
 This repo contains steps and scripts originally from [this thread on Reddit]( https://www.reddit.com/r/teslamotors/comments/9m9gyk/build_a_smart_usb_drive_for_your_tesla_dash_cam/)

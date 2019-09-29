@@ -50,6 +50,10 @@ then
   exit 1
 fi
 
+function isPi4 {
+  grep -q "Pi 4" /sys/firmware/devicetree/base/model
+}
+
 function timestamp () {
   local prefix=${1:-}
   while IFS= read line
@@ -230,7 +234,7 @@ function wait_for_archive_to_be_unreachable () {
 }
 
 function check_if_usb_gadget_is_mounted () {
-    if [ ! -d /sys/devices/platform/soc/20980000.usb/gadget/lun0 ]
+    if [ ! -d /sys/devices/platform/soc/??980000.usb/gadget/lun0 ]
     then
         log "USB Gadget not mounted. Fixing files and remounting..."
         disconnect_usb_drives_from_host
@@ -266,43 +270,49 @@ function disconnect_usb_drives_from_host () {
 }
 
 function archive_teslacam_clips () {
-  log "Checking saved folder count..."
+    log "Checking saved folder count..."
   
-  ensure_cam_file_is_mounted
+    ensure_cam_file_is_mounted
 
-  fix_errors_in_cam_file
+    fix_errors_in_cam_file
   
-  DIR_COUNT=$(find "$CAM_MOUNT"/TeslaCam/SavedClips/* -maxdepth 0 -type d | wc -l)
-  FILE_COUNT=$(find "$CAM_MOUNT"/TeslaCam/SavedClips/* -type f | wc -l)
+    DIR_COUNT=$(cd "$CAM_MOUNT"/TeslaCam && find . -maxdepth 2 -path './SavedClips/*' -o -path './SentryClips/*' -type d | wc -l)
+    FILE_COUNT=$(cd "$CAM_MOUNT"/TeslaCam && find . -maxdepth 3 -path './SavedClips/*' -o -path './SentryClips/*' -type f | wc -l)
   
-  log "There are $DIR_COUNT event folder(s) with $FILE_COUNT file(s) to move."
+    log "There are $DIR_COUNT event folder(s) with $FILE_COUNT file(s) to move."
   
-  if [ $DIR_COUNT -gt 0 ]
-  then
-	log "Starting recording archiving..."
+    if [ $DIR_COUNT -gt 0 ]
+    then
+        log "Starting recording archiving: $DIR_COUNT event folder(s) with $FILE_COUNT file(s)"
 
-	/root/bin/send-push-message "TeslaUSB:" "Archiving $DIR_COUNT event folder(s) with $FILE_COUNT file(s) starting at $(date)"
+        /root/bin/send-push-message "TeslaUSB:" "Archiving $DIR_COUNT event folder(s) with $FILE_COUNT file(s) starting at $(date)"
 
-	if [ -f /root/bin/tesla_api.py ]
-	then
-		while :
-		do
-		sleep 120
-		/root/bin/tesla_api.py wake_up_vehicle >> "$LOG_FILE"
-		done&
-		WAKE_PID=$!
-		log "wake up car process is $WAKE_PID"
+        # Ensure Sentry Mode is enabled before archiving
+        declare is_sentry_mode_enabled
+        if [ -x /root/bin/tesla_api.py ]
+        then
+            is_sentry_mode_enabled=$(/root/bin/tesla_api.py is_sentry_mode_enabled | tr '[:upper:]' '[:lower:]')
+            if [ "false" = "${is_sentry_mode_enabled}" ]
+            then
+                log "Temporarily enabling Sentry Mode to power the RPi while archive job completes..."
+                /root/bin/tesla_api.py enable_sentry_mode &>> ${LOG_FILE}
+            fi
+        fi
+
+        /root/bin/archive-clips.sh
+
+        # If Sentry Mode was previously disabled, restore it to that state
+        if [ -x /root/bin/tesla_api.py ]
+        then
+	    if [ "false" = "${is_sentry_mode_enabled}" ]
+	    then
+	        log "Restoring Sentry Mode to its previous state (disabled)..."
+   	         /root/bin/tesla_api.py disable_sentry_mode &>> ${LOG_FILE}
+	    fi
 	fi
+    fi
 
-	/root/bin/archive-clips.sh
-	
-  fi
-  if [ ! -z "${WAKE_PID+x}" ]
-  then
-    log "killing PID $WAKE_PID"
-    kill $WAKE_PID
-  fi
-  unmount_cam_file
+    unmount_cam_file
 }
 
 function copy_music_files () {
@@ -367,20 +377,39 @@ function truncate_log () {
 
 function slowblink () {
   echo timer > /sys/class/leds/led0/trigger
-  echo 900 > /sys/class/leds/led0/delay_on
-  echo 100 > /sys/class/leds/led0/delay_off
+  local ON=on
+  local OFF=off
+  if isPi4
+  then
+    ON=off
+    OFF=on
+  fi
+  echo 900 > /sys/class/leds/led0/delay_$ON
+  echo 100 > /sys/class/leds/led0/delay_$OFF
 }
 
 function fastblink () {
   echo timer > /sys/class/leds/led0/trigger
-  echo 150 > /sys/class/leds/led0/delay_on
-  echo 50 > /sys/class/leds/led0/delay_off
+  local ON=on
+  local OFF=off
+  if isPi4
+  then
+    ON=off
+    OFF=on
+  fi
+  echo 150 > /sys/class/leds/led0/delay_$ON
+  echo 50 > /sys/class/leds/led0/delay_$OFF
 }
 
 
 function doubleblink () {
   echo heartbeat > /sys/class/leds/led0/trigger
-  echo 1 > /sys/class/leds/led0/invert
+  if isPi4
+  then
+    echo 0 > /sys/class/leds/led0/invert
+  else
+    echo 1 > /sys/class/leds/led0/invert
+  fi
 }
 
 function set_time () {
@@ -399,7 +428,7 @@ function set_time () {
   then
     log "Failed to stop ntp daemon"
   fi
-  if ! ntpd -q -x -g
+  if ! timeout 20 ntpd -q -x -g
   then
     log "Failed to set time"
   fi
@@ -418,6 +447,7 @@ function mount_all_snapshots {
 
   for img in /backingfiles/snapshots/snap-*/snap.bin
   do
+    log "mounting snapshot $img"
     imgdir=$(dirname "$img")
     if mount | grep "$imgdir/mnt"
     then
@@ -426,6 +456,7 @@ function mount_all_snapshots {
     fi
     /root/bin/mount_image.sh "$img" "$imgdir/mnt"
   done
+  log "mounted all snapshots"
 }
 
 
@@ -448,7 +479,6 @@ echo "==============================================" >> "$LOG_FILE"
 log "Starting archiveloop..."
 
 mount_all_snapshots
-log "mounted all snapshots"
 
 /root/bin/make_snapshot.sh
 
